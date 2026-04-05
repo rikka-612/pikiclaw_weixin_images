@@ -33,7 +33,7 @@ API Error: 400 - unsupported image format: application/octet-stream
 ```powershell
 # 1. 克隆本仓库
 git clone https://github.com/rikka-612/pikiclaw_weixin_images.git
-cd pikiclaw-weixin-images
+cd pikiclaw_weixin_images
 
 # 2. 运行安装脚本
 .\install.ps1 -PikiclawPath "$env:APPDATA\npm\node_modules\pikiclaw"
