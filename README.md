@@ -32,7 +32,6 @@ API Error: 400 - unsupported image format: application/octet-stream
 
 ```powershell
 # 1. 克隆本仓库
-git clone https://github.com/YOUR_USERNAME/pikiclaw-weixin-images.git
 cd pikiclaw-weixin-images
 
 # 2. 运行安装脚本
