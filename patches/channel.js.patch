@@ -1,0 +1,93 @@
+--- a/dist/channels/weixin/channel.js
++++ b/dist/channels/weixin/channel.js
+@@ -1,12 +1,51 @@
+ /**
+  * WeChat channel transport.
+  */
++import fs from 'node:fs';
++import path from 'node:path';
++import os from 'node:os';
++import https from 'node:https';
++import http from 'node:http';
+ import { Channel, DEFAULT_CHANNEL_CAPABILITIES, splitText, sleep, } from '../base.js';
+ import { WEIXIN_LIMITS } from '../../core/constants.js';
+-import { extractWeixinTextBody, extractWeixinImageUrls, markdownToWeixinPlainText, normalizeWeixinBaseUrl, WeixinMessageType, weixinGetConfig, weixinGetUpdates, weixinSendTextMessage, weixinSendTyping, } from './api.js';
++import { extractWeixinTextBody, extractWeixinImageUrls, downloadAndDecryptWeixinImage, markdownToWeixinPlainText, normalizeWeixinBaseUrl, WeixinMessageType, WeixinMessageItemType, weixinGetConfig, weixinGetUpdates, weixinSendTextMessage, weixinSendTyping, } from './api.js';
+ const WEIXIN_MAX_MESSAGE_LENGTH = WEIXIN_LIMITS.maxMessageLength;
+ const WEIXIN_MAX_RETRY_DELAY_MS = WEIXIN_LIMITS.maxRetryDelay;
+ function describeError(error) {
+     return error instanceof Error ? error.message : String(error ?? 'unknown error');
+ }
+ function isAbortError(error) {
+     return error instanceof Error && error.name === 'AbortError';
+ }
++// Download image from URL to temp directory
++async function downloadImage(url) {
++    return new Promise((resolve, reject) => {
++        const client = url.startsWith('https:') ? https : http;
++        const tempDir = os.tmpdir();
++        const ext = path.extname(new URL(url).pathname) || '.jpg';
++        const tempFile = path.join(tempDir, `weixin_img_${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
++        
++        const file = fs.createWriteStream(tempFile);
++        const request = client.get(url, (response) => {
++            if (response.statusCode !== 200) {
++                reject(new Error(`HTTP ${response.statusCode}`));
++                return;
++            }
++            response.pipe(file);
++            file.on('finish', () => {
++                file.close();
++                resolve(tempFile);
++            });
++        });
++        
++        request.on('error', (err) => {
++            fs.unlink(tempFile, () => {});
++            reject(err);
++        });
++        
++        file.on('error', (err) => {
++            fs.unlink(tempFile, () => {});
++            reject(err);
++        });
++        
++        request.setTimeout(30000, () => {
++            request.destroy();
++            fs.unlink(tempFile, () => {});
++            reject(new Error('Download timeout'));
++        });
++    });
++}
+ export class WeixinChannel extends Channel {
+     capabilities = {
+         ...DEFAULT_CHANNEL_CAPABILITIES,
+@@ -168,10 +207,19 @@ export class WeixinChannel extends Channel {
+             channel: this,
+             raw: message,
+         };
+-        const payload = {
+-            text: extractWeixinTextBody(message),
+-            files: extractWeixinImageUrls(message),
+-        };
++        // Download and decrypt images
++        const localFiles = [];
++        const items = message.item_list || [];
++        for (const item of items) {
++            if (item.type === WeixinMessageItemType.IMAGE && item.image_item) {
++                try {
++                    const localPath = await downloadAndDecryptWeixinImage(item.image_item);
++                    localFiles.push(localPath);
++                }
++                catch (err) {
++                    console.error('[WeixinChannel] Failed to decrypt image:', err);
++                }
++            }
++        }
++        const payload = {
++            text: extractWeixinTextBody(message),
++            files: localFiles,
++        };
+         for (const handler of this.messageHandlers) {
+             try {
+                 await handler(payload, ctx);

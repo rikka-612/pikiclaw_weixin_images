@@ -1,0 +1,67 @@
+--- a/dist/channels/weixin/api.js
++++ b/dist/channels/weixin/api.js
+@@ -1,6 +1,9 @@
+ /**
+  * WeChat official account API integration.
+  */
+ import crypto from 'node:crypto';
++import fs from 'node:fs';
++import os from 'node:os';
++import path from 'node:path';
+ import QRCode from 'qrcode';
+ import { VALIDATION_TIMEOUTS, WEIXIN_LIMITS } from '../../core/constants.js';
+ 
+@@ -302,13 +305,52 @@ export function extractWeixinImageUrls(message) {
+     const urls = [];
+     for (const item of items) {
+         if (item.type === WeixinMessageItemType.IMAGE && item.image_item) {
+-            const url = item.image_item.url || item.image_item.cdn_url || item.image_item.pic_url;
++            // Try various possible URL locations
++            const url = item.image_item.url ||
++                item.image_item.cdn_url ||
++                item.image_item.pic_url ||
++                item.image_item.media?.full_url;
+             if (url)
+                 urls.push(String(url));
+         }
+     }
+     return urls;
+ }
++
++// Download and decrypt WeChat image
++export async function downloadAndDecryptWeixinImage(imageItem) {
++    const media = imageItem.media;
++    const aesKeyHex = imageItem.aeskey;
++    if (!media?.full_url || !aesKeyHex) {
++        throw new Error('Missing required image data');
++    }
++    // Download encrypted data
++    const response = await fetch(media.full_url);
++    if (!response.ok) {
++        throw new Error(`HTTP ${response.status}`);
++    }
++    const encryptedData = Buffer.from(await response.arrayBuffer());
++    // Decrypt using AES-128-ECB with PKCS7 padding
++    const key = Buffer.from(aesKeyHex, 'hex');
++    const decipher = crypto.createDecipheriv('aes-128-ecb', key, null);
++    decipher.setAutoPadding(true);
++    let decrypted = decipher.update(encryptedData);
++    decrypted = Buffer.concat([decrypted, decipher.final()]);
++    // Determine file extension from magic bytes
++    const magic = decrypted.slice(0, 4).toString('hex');
++    let ext = 'jpg';
++    if (magic.startsWith('89504e47'))
++        ext = 'png';
++    else if (magic.startsWith('47494638'))
++        ext = 'gif';
++    else if (magic.startsWith('52494646'))
++        ext = 'webp';
++    // Save to temp file
++    const tempPath = path.join(os.tmpdir(), `weixin_img_${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`);
++    fs.writeFileSync(tempPath, decrypted);
++    return tempPath;
++}
++
+ export function markdownToWeixinPlainText(text) {
+     let result = String(text || '');
+     result = result.replace(/```[^\n]*\n?([\s\S]*?)```/g, (_, code) => code.trim());

@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Backups
+backups/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+
+# Test files
+test_image.jpg
+test_image.png
+test_image.gif

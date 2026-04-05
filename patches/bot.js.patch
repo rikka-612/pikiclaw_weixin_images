@@ -1,0 +1,20 @@
+--- a/dist/channels/weixin/bot.js
++++ b/dist/channels/weixin/bot.js
+@@ -175,10 +175,17 @@ export class WeixinBot extends Bot {
+         await this.channel.send(chatId, text);
+     }
+     async handleMessage(msg, ctx) {
+-        const text = msg.text.trim();
++        console.log('[WeixinBot] Received message:', JSON.stringify({ text: msg.text, files: msg.files }));
++        let text = msg.text.trim();
++        // If only images without text, add a default prompt
++        if (!text && msg.files.length > 0) {
++            text = 'Please describe what you see in the image(s).';
++        }
+         if (text.startsWith('/') && await this.handleCommand(text, ctx))
+             return;
+         if (!text && !msg.files.length) {
++            console.log('[WeixinBot] Rejecting: empty text and no files');
+             await ctx.reply('This Weixin channel currently supports text input only.');
+             return;
+         }
